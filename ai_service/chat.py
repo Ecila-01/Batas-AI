@@ -1,7 +1,7 @@
 import sys
 import os
 from dotenv import load_dotenv
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_google_genai import ChatGoogleGenerativeAI
 
@@ -12,7 +12,10 @@ ACTIVE_MODEL = "gemini-2.5-flash"
 
 def ask_batas(question):
     try:
-        embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+        embeddings = GoogleGenerativeAIEmbeddings(
+            model="models/embedding-001", 
+            google_api_key=os.getenv("GOOGLE_API_KEY")
+        )
         vector_db = FAISS.load_local("batas_index", embeddings, allow_dangerous_deserialization=True)
 
         # Use the global variable here

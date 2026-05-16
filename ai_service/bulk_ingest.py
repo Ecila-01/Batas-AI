@@ -8,7 +8,7 @@ import cloudinary
 import cloudinary.api
 from dotenv import load_dotenv
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
 
@@ -102,7 +102,10 @@ def main():
     chunks = text_splitter.split_documents([document])
     
     print(f"Created {len(chunks)} text chunks. Loading embeddings framework...")
-    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+    embeddings = GoogleGenerativeAIEmbeddings(
+    model="models/embedding-001", 
+    google_api_key=os.getenv("GOOGLE_API_KEY")
+    )
 
     # 5. SMART APPEND LOGIC
     if os.path.exists(INDEX_PATH):
