@@ -35,4 +35,4 @@ ENV HOST=0.0.0.0
 EXPOSE 5000
 
 # 8. Tell Render to start your Node.js Express server backend
-CMD python3 /app/ai_service/bulk_ingest.py & cd /app/server && node server.js
+CMD python3 -u /app/ai_service/bulk_ingest.py & cd /app/server && node server.js
