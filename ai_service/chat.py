@@ -8,7 +8,7 @@ from qdrant_client import QdrantClient
 import json
 load_dotenv()
 
-ACTIVE_MODEL = "gemini-2.0-flash-lite"
+ACTIVE_MODEL = "gemini-2.5-flash"
 COLLECTION_NAME = "Batas"
 
 def ask_batas(question):
