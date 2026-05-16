@@ -171,7 +171,7 @@ app.post('/api/ask', (req, res) => {
         return res.status(400).json({ error: "Missing question or session ID" });
     }
 
-    print(`\nUser [${sessionId}] asked: "${userQuestion}"`);
+    console.log(`\nUser [${sessionId}] asked: "${userQuestion}"`);
     console.log("Waking up Batas AI...");
 
     const pythonProcess = spawn(PYTHON_CMD, ['-u', 'chat.py', userQuestion], {
