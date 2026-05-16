@@ -5,7 +5,7 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_qdrant import QdrantVectorStore
 from qdrant_client import QdrantClient
-
+import json
 load_dotenv()
 
 ACTIVE_MODEL = "gemini-2.5-flash"
@@ -34,6 +34,19 @@ def ask_batas(question):
         relevant_docs = vectorstore.similarity_search(question, k=4)
         context = "\n\n".join([doc.page_content for doc in relevant_docs])
 
+        # 1. Extract sources first
+        seen = set()
+        sources = []
+        for doc in relevant_docs:
+            source = doc.metadata.get('source', 'Unknown')
+            url = doc.metadata.get('url', '')
+            if source not in seen and source != 'temp_download.pdf':
+                seen.add(source)
+                sources.append({'name': source, 'url': url})
+            if len(sources) == 1:
+                break
+
+        # 2. Build prompt
         prompt = f"""
         You are Batas, a polite and professional AI assistant specializing in analyzing local laws, ordinances, and legal documents from any municipality.
         
@@ -49,12 +62,18 @@ def ask_batas(question):
         {question}
         """
 
+        # 3. Invoke LLM
         response = llm.invoke(prompt)
-        print(response.content.strip())
+
+        # 4. Build and print output
+        output = {
+            "answer": response.content.strip(),
+            "sources": sources
+        }
+        print(json.dumps(output))
 
     except Exception as e:
-        print(f"Error processing request: {str(e)}")
-
+        print(json.dumps({"answer": f"Error processing request: {str(e)}", "sources": []}))
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:

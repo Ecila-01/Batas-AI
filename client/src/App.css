@@ -31,6 +31,7 @@ body, html {
   border-radius: 16px;
   box-shadow: 0 10px 40px rgba(0,0,0,0.08);
   overflow: hidden;
+  position: relative;
 }
 
 /* ================== SIDEBAR ================== */
@@ -41,34 +42,34 @@ body, html {
   display: flex;
   flex-direction: column;
   padding: 24px 20px;
+  transition: transform 0.3s ease;
+  z-index: 100;
 }
 
 .sidebar-header {
   margin-bottom: 28px;
 }
 
-/* NEW: Container for logo image + optional text */
 .logo-with-text-container {
   display: flex;
   align-items: center;
   gap: 12px;
+  padding-left: 4px;
 }
 
-/* Styling the full logo asset with "Batas" text */
 .logo-with-text-img {
-  height: 46px; /* Increased size */
-  width: 46px; /* Forced square so it doesn't squish */
+  height: 46px;
+  width: 46px;
   object-fit: cover;
   flex-shrink: 0;
-  transform: scale(1.2); /* Zooms in to hide the empty transparent borders of your file */
+  transform: scale(1.2);
 }
 
-/* Adding "AI" next to the logo asset */
 .logo-text-ai {
   font-size: 1.4rem;
   font-weight: 700;
   color: #0f172a;
-  letter-spacing: -0.5px; /* Pulls the letters slightly closer together for a cleaner look */
+  letter-spacing: -0.5px;
 }
 
 .sidebar-spacer {
@@ -116,6 +117,7 @@ body, html {
 }
 .sidebar-upload-btn svg { width: 18px; height: 18px; }
 .sidebar-upload-btn:hover { background-color: #e2e8f0; border-color: #94a3b8; }
+.sidebar-upload-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ================== MAIN CONTENT ================== */
 .main-content {
@@ -124,6 +126,7 @@ body, html {
   flex-direction: column;
   background-color: #ffffff;
   position: relative;
+  min-width: 0; /* Prevents flex overflow */
 }
 
 /* TOPBAR */
@@ -134,6 +137,7 @@ body, html {
   padding: 16px 32px;
   border-bottom: 1px solid #e2e8f0;
   background-color: #ffffff;
+  flex-shrink: 0;
 }
 
 .topbar-info h3 {
@@ -175,6 +179,19 @@ body, html {
 .github-btn svg { width: 16px; height: 16px; }
 .github-btn:hover { background-color: #e2e8f0; }
 
+/* Hamburger menu button — hidden on desktop */
+.menu-btn {
+  display: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  color: #0f172a;
+  align-items: center;
+  justify-content: center;
+}
+.menu-btn svg { width: 24px; height: 24px; }
+
 /* CHAT WINDOW */
 .chat-window {
   flex: 1;
@@ -203,38 +220,36 @@ body, html {
 
 /* Avatar Containers */
 .message-avatar {
-  width: 44px; /* Increased size */
-  height: 44px; /* Increased size */
+  width: 40px;
+  height: 40px;
   border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   overflow: hidden;
-  background-color: #ffffff;
 }
 
-/* Styling the image inside the AI avatar container */
-.chat-avatar-icon {
-  width: 100%; 
-  height: 100%;
-  object-fit: cover;
-  /* Removed the 4px padding that was shrinking it earlier */
-  transform: scale(1.3); /* Stronger zoom to make the scales easily readable in chat */
-}
-
-.message-avatar.user { background-color: #e2e8f0; color: #475569; }
-.message-avatar.user svg { width: 22px; height: 22px; }
-
-/* Specific border for AI avatar container */
 .message-avatar.ai {
+  background-color: #f1f5f9;
   border: 1px solid #e2e8f0;
+  color: #0f172a;
 }
+
+.message-avatar.user {
+  background-color: #0f172a;
+  color: #ffffff;
+}
+
+.message-avatar.ai svg { width: 22px; height: 22px; }
+.message-avatar.user svg { width: 20px; height: 20px; }
+
 .message-content {
   flex: 1;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-width: 0; /* Prevents text overflow */
 }
 
 .message-bubble {
@@ -242,6 +257,8 @@ body, html {
   font-size: 1rem;
   color: #334155;
   padding-top: 4px;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 .message-bubble.user {
@@ -250,6 +267,7 @@ body, html {
   border-radius: 12px 12px 2px 12px;
   padding: 12px 16px;
   display: inline-block;
+  max-width: 100%;
 }
 
 .message-bubble.ai {
@@ -258,6 +276,7 @@ body, html {
   border-radius: 12px 12px 12px 2px;
   padding: 12px 16px;
   display: inline-block;
+  max-width: 100%;
 }
 
 /* CITATIONS */
@@ -281,8 +300,12 @@ body, html {
   color: #475569;
   cursor: pointer;
   transition: all 0.2s;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.citation-chip svg { width: 12px; height: 12px; color: #64748b; }
+.citation-chip svg { width: 12px; height: 12px; color: #64748b; flex-shrink: 0; }
 .citation-chip:hover { background-color: #f1f5f9; border-color: #cbd5e1; }
 
 /* INPUT AREA */
@@ -292,11 +315,12 @@ body, html {
   display: flex;
   flex-direction: column;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .input-form {
   display: flex;
-  align-items: center; 
+  align-items: center;
   gap: 12px;
   width: 100%;
   max-width: 850px;
@@ -312,12 +336,13 @@ body, html {
 
 .input-form input {
   flex: 1;
-  padding: 12px 16px; 
+  padding: 12px 16px;
   border: none;
   background: transparent;
   font-size: 1rem;
   outline: none;
   color: #0f172a;
+  min-width: 0;
 }
 
 .send-btn {
@@ -331,6 +356,7 @@ body, html {
   justify-content: center;
   cursor: pointer;
   transition: background-color 0.2s;
+  flex-shrink: 0;
 }
 .send-btn svg { width: 18px; height: 18px; }
 .send-btn:hover:not(:disabled) { background-color: #334155; }
@@ -351,64 +377,164 @@ body, html {
 .load-dot:nth-child(2) { animation-delay: -0.16s; }
 @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
 
-/* ======================================= */
-/* Sidebar Logo Styling                    */
-/* ======================================= */
-.logo-with-text-container {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding-left: 4px;
-}
-
-/* The legal scale icon container in the sidebar */
-.logo-icon-svg {
-  width: 32px;
-  height: 32px;
-  color: #0f172a; /* Slate 900 for a crisp look */
-  flex-shrink: 0;
-}
-
-/* "Batas AI" text styling */
-.logo-text-ai {
-  font-size: 1.4rem;
-  font-weight: 700;
-  color: #0f172a;
-  letter-spacing: -0.5px;
-}
-
-/* ======================================= */
-/* Avatar Containers (Chat Window)         */
-/* ======================================= */
-.message-avatar {
-  width: 40px; 
-  height: 40px; 
-  border-radius: 8px;
+/* ================== PDF MODAL ================== */
+.pdf-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 1000;
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
+  padding: 16px;
+}
+
+.pdf-modal {
+  background: white;
+  border-radius: 12px;
+  width: 80vw;
+  height: 85vh;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
 }
 
-.message-avatar.ai {
-  background-color: #f1f5f9; /* Light slate background */
-  border: 1px solid #e2e8f0;
-  color: #0f172a; /* Scale icon color */
+.pdf-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid #eee;
+  font-weight: 600;
+  gap: 8px;
 }
 
-.message-avatar.user { 
-  background-color: #0f172a; /* Dark background for user */
-  color: #ffffff; 
+.pdf-modal-header span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9rem;
 }
 
-/* Dynamic sizes for the vector paths inside the chat */
-.message-avatar.ai svg {
-  width: 22px;
-  height: 22px;
+.pdf-modal-header button {
+  background: none;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  color: #666;
+  flex-shrink: 0;
 }
 
-.message-avatar.user svg { 
-  width: 20px; 
-  height: 20px; 
+.pdf-modal-iframe {
+  flex: 1;
+  border: none;
+  width: 100%;
+}
+
+/* Sidebar overlay for mobile — dark backdrop when sidebar is open */
+.sidebar-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 99;
+}
+
+/* ================== MOBILE RESPONSIVE ================== */
+@media (max-width: 768px) {
+
+  /* Remove padding so app fills the full screen */
+  #root {
+    padding: 0;
+    align-items: stretch;
+  }
+
+  .app-container {
+    border-radius: 0;
+    box-shadow: none;
+    height: 100dvh; /* Dynamic viewport height — handles mobile browser chrome */
+  }
+
+  /* Sidebar slides in as a drawer on mobile */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 260px;
+    transform: translateX(-100%);
+    box-shadow: 4px 0 20px rgba(0,0,0,0.15);
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+  }
+
+  /* Show the dark overlay when sidebar is open */
+  .sidebar-overlay.open {
+    display: block;
+  }
+
+  /* Show the hamburger menu button */
+  .menu-btn {
+    display: flex;
+  }
+
+  /* Tighten up the topbar on mobile */
+  .topbar {
+    padding: 12px 16px;
+  }
+
+  .topbar-info h3 {
+    font-size: 0.95rem;
+  }
+
+  .status-text {
+    font-size: 0.72rem;
+  }
+
+  /* Hide "View Source" text on mobile, keep just the icon */
+  .github-btn span {
+    display: none;
+  }
+
+  /* Tighter chat padding on mobile */
+  .chat-window {
+    padding: 20px 16px;
+    gap: 20px;
+  }
+
+  /* Smaller avatars on mobile */
+  .message-avatar {
+    width: 32px;
+    height: 32px;
+  }
+
+  .message-avatar.ai svg { width: 18px; height: 18px; }
+  .message-avatar.user svg { width: 16px; height: 16px; }
+
+  .message-bubble {
+    font-size: 0.95rem;
+  }
+
+  /* Tighter input area */
+  .input-area {
+    padding: 12px 16px;
+  }
+
+  .input-form input {
+    padding: 10px 12px;
+    font-size: 0.95rem;
+  }
+
+  /* Full screen PDF modal on mobile */
+  .pdf-modal {
+    width: 100%;
+    height: 100%;
+    border-radius: 0;
+  }
+
+  .pdf-modal-overlay {
+    padding: 0;
+  }
 }

@@ -49,8 +49,12 @@ const storage = new CloudinaryStorage({
     folder: 'Batas', 
     format: async (req, file) => 'pdf', 
     public_id: (req, file) => {
-        const cleanName = file.originalname.split('.')[0].replace(/\s+/g, '_');
-        return `${cleanName}-${Date.now()}`;
+        // Keep original filename, just replace spaces with underscores
+        const cleanName = file.originalname
+            .replace(/\.pdf$/i, '')        // Remove .pdf extension
+            .replace(/\s+/g, '_')          // Spaces to underscores
+            .replace(/[^a-zA-Z0-9_\-]/g, '') // Remove special characters
+        return cleanName;
     },
     resource_type: 'raw' 
   },
@@ -197,10 +201,22 @@ app.post('/api/ask', (req, res) => {
 
     pythonProcess.on('close', async (code) => {
         console.log("Successfully generated response!");
-        const finalAnswer = aiAnswer.trim();
+        
+        let finalAnswer = '';
+        let sources = [];
+        
+        try {
+            const parsed = JSON.parse(aiAnswer.trim());
+            finalAnswer = parsed.answer;
+            sources = parsed.sources;
+        } catch {
+            // Fallback if parsing fails
+            finalAnswer = aiAnswer.trim();
+            sources = [];
+        }
 
         try {
-            const newChat = new Chat ({
+            const newChat = new Chat({
                 sessionId: sessionId,
                 question: userQuestion,
                 answer: finalAnswer
@@ -211,7 +227,7 @@ app.post('/api/ask', (req, res) => {
             console.error("❌ Failed to save chat to DB:", dbError);
         }
 
-        res.json({ answer: finalAnswer });
+        res.json({ answer: finalAnswer, sources: sources });
     });
 });
 

@@ -105,7 +105,10 @@ def add_single_document(url):
             f.write(response.content)
 
         new_chunks = process_and_split_pdf(temp_pdf_path)
-
+        real_filename = url.split('/')[-1]
+        for chunk in new_chunks:
+            chunk.metadata['source'] = real_filename
+            chunk.metadata['url'] = url 
         if not new_chunks:
             print("⚠️ No chunks generated from document. Aborting.")
             os.remove(temp_pdf_path)
@@ -181,7 +184,10 @@ def run_master_sync(folder_name="Batas"):
                 f.write(response.content)
 
             splits = process_and_split_pdf(temp_pdf_path)
-
+            real_filename = url.split('/')[-1]
+            for chunk in splits:
+                chunk.metadata['source'] = real_filename
+                chunk.metadata['url'] = url 
             if splits:
                 print(f"   💉 Uploading {len(splits)} chunks to Qdrant...")
                 vectorstore.add_documents(splits)
