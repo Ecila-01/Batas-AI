@@ -5,7 +5,11 @@ const { spawn } = require('child_process');
 const path = require('path');
 const multer = require('multer');
 const fs = require('fs');
-const mongoose = require('mongoose'); // NEW: Import mongoose
+const mongoose = require('mongoose');
+
+// CLOUDINARY STORAGE IMPORTS
+const cloudinary = require('cloudinary').v2;
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
 
 const app = express();
 
@@ -20,13 +24,10 @@ mongoose.connect(process.env.MONGO_URI)
     .then(() => console.log('✅ Connected to MongoDB Atlas'))
     .catch(err => console.error('❌ MongoDB Connection Error:', err));
 
-
-
 const chatSchema = new mongoose.Schema({
     sessionId: String,
     question: String,
     answer: String,
-    // NEW: MongoDB will automatically delete this document 24 hours (86400 seconds) after it is created!
     createdAt: { type: Date, default: Date.now, expires: 86400 } 
 });
 
@@ -34,19 +35,25 @@ const chatSchema = new mongoose.Schema({
 const Chat = mongoose.model('Chat', chatSchema);
 
 // ==========================================
-// 2. MULTER CONFIGURATION (Local MVP)
+// 2. CLOUDINARY & MULTER CONFIGURATION
 // ==========================================
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        const uploadPath = path.join(__dirname, '../ai_service/ordinances');
-        if (!fs.existsSync(uploadPath)) {
-            fs.mkdirSync(uploadPath, { recursive: true });
-        }
-        cb(null, uploadPath);
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
+
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'Batas', 
+    format: async (req, file) => 'pdf', 
+    public_id: (req, file) => {
+        const cleanName = file.originalname.split('.')[0].replace(/\s+/g, '_');
+        return `${cleanName}-${Date.now()}`;
     },
-    filename: (req, file, cb) => {
-        cb(null, file.originalname);
-    }
+    resource_type: 'raw' 
+  },
 });
 
 const upload = multer({ 
@@ -61,14 +68,18 @@ const upload = multer({
 });
 
 // ==========================================
+// ENVIRONMENT AWARE PYTHON EXECUTABLE BINDING
+// ==========================================
+// Uses the global Linux executable 'python3' when on Render, falls back to local virtual env for Windows development
+const PYTHON_CMD = process.env.NODE_ENV === 'production' ? 'python3' : '.venv/Scripts/python.exe';
+
+// ==========================================
 // 3. API ENDPOINTS
 // ==========================================
 
-
-
-// NEW: Fetch the active AI Model from Python
+// Fetch the active AI Model from Python
 app.get('/api/model', (req, res) => {
-    const pythonProcess = spawn('.venv/Scripts/python.exe', ['-u', 'chat.py', '--get-model'], {
+    const pythonProcess = spawn(PYTHON_CMD, ['-u', 'chat.py', '--get-model'], {
         cwd: path.join(__dirname, '../ai_service') 
     });
 
@@ -83,22 +94,30 @@ app.get('/api/model', (req, res) => {
     });
 });
 
-// NEW: Ping Endpoint to keep the free server awake!
+// Ping Endpoint to keep the free server awake!
 app.get('/api/ping', (req, res) => {
     res.status(200).send("pong");
 });
 
-// File Upload Route
+// Production Cloudinary Upload Route
 app.post('/api/upload', upload.single('file'), (req, res) => {
     if (!req.file) {
         return res.status(400).json({ error: "No file uploaded or invalid file type." });
     }
 
-    console.log(`\n📥 Received new file: ${req.file.originalname}`);
-    console.log("⚙️ Triggering AI Data Ingestion...");
+    const cloudinaryUrl = req.file.path; 
+    console.log(`\n☁️ File securely hosted on Cloudinary: ${cloudinaryUrl}`);
+    console.log("⚙️ Triggering AI Data Ingestion via Remote Stream Address...");
 
-    const pythonProcess = spawn('.venv/Scripts/python.exe', ['-u', 'bulk_ingest.py'], {
-        cwd: path.join(__dirname, '../ai_service') 
+    // Spawning data ingestion script passing down environmental keys dynamically
+    const pythonProcess = spawn(PYTHON_CMD, ['-u', 'bulk_ingest.py', '--url', cloudinaryUrl], {
+        cwd: path.join(__dirname, '../ai_service'),
+        env: {
+            ...process.env,
+            CLOUDINARY_API_KEY: process.env.CLOUDINARY_API_KEY,
+            CLOUDINARY_API_SECRET: process.env.CLOUDINARY_API_SECRET,
+            CLOUDINARY_CLOUD_NAME: process.env.CLOUDINARY_CLOUD_NAME
+        }
     });
 
     pythonProcess.stdout.on('data', (data) => {
@@ -110,19 +129,19 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
     });
 
     pythonProcess.on('close', (code) => {
-        console.log("✅ AI successfully absorbed the new document!");
+        console.log("✅ AI successfully absorbed the new cloud document!");
         res.json({ 
             message: "File uploaded and AI brain updated successfully!",
-            filename: req.file.originalname
+            filename: req.file.originalname,
+            url: cloudinaryUrl
         });
     });
 });
 
-//Fetch Chat History Route
+// Fetch Chat History Route
 app.get('/api/history/:sessionId', async (req, res) => {
     try {
         const { sessionId } = req.params;
-        // Find all chats with this session ID and sort them by oldest to newest (timestamp: 1)
         const history = await Chat.find({ sessionId: sessionId }).sort({ timestamp: 1 });
         res.json(history);
     } catch (error) {
@@ -131,7 +150,7 @@ app.get('/api/history/:sessionId', async (req, res) => {
     }
 });
 
-//delete
+// Delete History
 app.delete('/api/history/:sessionId', async (req, res) => {
     try {
         const { sessionId } = req.params;
@@ -143,19 +162,19 @@ app.delete('/api/history/:sessionId', async (req, res) => {
         res.status(500).json({ error: "Failed to clear history" });
     }
 });
+
 // Chat Route 
 app.post('/api/ask', (req, res) => {
-    // Grab both the question and the sessionId from the frontend
     const { question: userQuestion, sessionId } = req.body;
 
     if (!userQuestion || !sessionId) {
         return res.status(400).json({ error: "Missing question or session ID" });
     }
 
-    console.log(`\nUser [${sessionId}] asked: "${userQuestion}"`);
+    print(`\nUser [${sessionId}] asked: "${userQuestion}"`);
     console.log("Waking up Batas AI...");
 
-    const pythonProcess = spawn('.venv/Scripts/python.exe', ['-u', 'chat.py', userQuestion], {
+    const pythonProcess = spawn(PYTHON_CMD, ['-u', 'chat.py', userQuestion], {
         cwd: path.join(__dirname, '../ai_service') 
     });
 
@@ -173,9 +192,8 @@ app.post('/api/ask', (req, res) => {
         console.log("Successfully generated response!");
         const finalAnswer = aiAnswer.trim();
 
-        // Save the conversation to MongoDB attached to this specific user
         try {
-            const newChat = new Chat({
+            const newChat = new Chat ({
                 sessionId: sessionId,
                 question: userQuestion,
                 answer: finalAnswer
