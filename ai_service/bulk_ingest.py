@@ -218,5 +218,8 @@ if __name__ == "__main__":
         add_single_document(args.url)
     else:
         run_master_sync()
-    print("👋 Ingestion process complete. Handing over control to the web server...")
-    sys.exit(0)
+    print("👋 Master sync finished! Force killing ingestion thread to start Node.js server...")
+    
+    # This completely flushes stdout buffers and forcibly kills the current process id,
+    sys.stdout.flush()
+    os._exit(0)
