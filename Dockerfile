@@ -35,6 +35,5 @@ ENV HOST=0.0.0.0
 EXPOSE 5000
 
 # 8. Start your Node.js Express server backend directly
-RUN python3 -u /app/ai_service/bulk_ingest.py
 WORKDIR /app/server
 CMD ["node", "server.js"]

@@ -12,6 +12,7 @@ const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 
 const app = express();
+let isSystemInitializing = true;
 
 const clientOrigin = process.env.CLIENT_URL || 'http://localhost:5173';
 app.use(cors({ origin: clientOrigin }));
@@ -91,7 +92,7 @@ app.get('/api/model', (req, res) => {
     });
 
     pythonProcess.on('close', () => {
-        res.json({ model: modelName.trim() || 'Unknown Model' });
+        res.json({ model: modelName.trim() || 'Unknown Model', isInitializing: isSystemInitializing });
     });
 });
 
@@ -165,6 +166,11 @@ app.delete('/api/history/:sessionId', async (req, res) => {
 
 // Chat Route 
 app.post('/api/ask', (req, res) => {
+    if (isSystemInitializing) {
+        return res.status(503).json({ 
+            answer: "Batas AI is currently initializing the database from the cloud. Please wait about 2 minutes and try asking again!" 
+        });
+    }
     const { question: userQuestion, sessionId } = req.body;
 
     if (!userQuestion || !sessionId) {
@@ -218,4 +224,24 @@ const HOST = process.env.NODE_ENV === 'production' ? '0.0.0.0' : 'localhost';
 app.listen(PORT, HOST, () => {
     const displayHost = HOST === '0.0.0.0' ? 'Baguio Cloud Environment' : HOST;
     console.log(`🚀 Batas API Server is live and listening at http://${displayHost}:${PORT}`);
+
+    // 🔥 Launch the background master sync securely with environment variables
+    console.log("⚙️ Waking up asynchronous background master sync...");
+    const initSync = spawn(PYTHON_CMD, ['-u', 'bulk_ingest.py'], {
+        cwd: path.resolve(__dirname, '../ai_service'),
+        env: { ...process.env } // Safely passes the API keys!
+    });
+
+    initSync.stdout.on('data', (data) => {
+        console.log(`[Sync]: ${data.toString().trim()}`);
+    });
+
+    initSync.stderr.on('data', (data) => {
+        console.log(`[Sync Error]: ${data.toString().trim()}`);
+    });
+
+    initSync.on('close', (code) => {
+        isSystemInitializing = false; // 👈 THE GATEWAY OPENS!
+        console.log("⚡ [SYSTEM READY]: Master vector baseline compiled. AI is now unlocked!");
+    });
 });
