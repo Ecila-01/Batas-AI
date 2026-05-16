@@ -7,6 +7,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_qdrant import QdrantVectorStore
 from qdrant_client import QdrantClient
 import json
+
 load_dotenv()
 
 ACTIVE_MODEL = "gemini-2.5-flash"
@@ -32,20 +33,20 @@ def ask_batas(question):
 
         llm = ChatGoogleGenerativeAI(model=ACTIVE_MODEL, temperature=0)
 
+        # 1. Similarity Search
         relevant_docs = vectorstore.similarity_search(question, k=6)
 
+        # 2. Heuristic filtering for Ordinance numbers
         mentioned = re.search(r'ordinance\s+(?:no\.?\s*|number\s*)?(\d+)', question, re.IGNORECASE)
-
         if mentioned:
             ord_num = mentioned.group(1)
-            # Prioritize chunks whose source filename contains the ordinance number
             prioritized = [d for d in relevant_docs if ord_num in d.metadata.get('source', '')]
             others = [d for d in relevant_docs if ord_num not in d.metadata.get('source', '')]
-            relevant_docs = (prioritized + others)[:4]  # Put matching source first
+            relevant_docs = (prioritized + others)[:4]
 
         context = "\n\n".join([doc.page_content for doc in relevant_docs])
 
-        # 1. Extract sources first
+        # 3. Pre-extract the source file
         seen = set()
         sources = []
         for doc in relevant_docs:
@@ -56,15 +57,17 @@ def ask_batas(question):
                 sources.append({'name': source, 'url': url})
             if len(sources) == 1:
                 break
-        print(f"[Debug] Context being sent to LLM:\n{context}", file=sys.stderr)
-        # 2. Build prompt
+
+        # 4. THE STRICT PROMPT
         prompt = f"""
-        You are Batas, a polite and professional AI assistant specializing in analyzing local laws, ordinances, and legal documents from any municipality.
+        You are Batas, a polite and professional AI assistant specializing in analyzing local Baguio laws and ordinances.
 
         INSTRUCTIONS:
-        1. GREETINGS & CHAT: If the user simply says hello, greets you, or says thank you, respond warmly and naturally.
-        2. DOCUMENT ANALYSIS: Answer questions using the DOCUMENT TEXT below. The text may contain minor OCR errors (e.g. "Adember" means "Member", "Ion," means "Hon.") — interpret these intelligently and still answer.
-        3. MISSING INFORMATION: Only say you cannot find information if it is genuinely absent from the document text entirely. Do not refuse due to minor spelling errors or formatting issues in the scanned text.
+        1. GREETINGS & CHAT: If the user says hello, greets you, or asks a general non-legal question, respond warmly. If you are ONLY greeting the user, DO NOT add the secret tag at the end.
+        2. DOCUMENT ANALYSIS: Answer questions STRICTLY using the DOCUMENT TEXT below. Do not use outside knowledge or hallucinate fine amounts.
+        3. OCR ERRORS: The text contains minor OCR scanning errors (e.g., "Adember" means "Member"). Interpret these intelligently.
+        4. MISSING INFO: If the DOCUMENT TEXT does not contain the exact answer, you MUST state: "I cannot find this specific information in the provided document." Do not guess.
+        5. THE SECRET TAG: If, and ONLY if, you use the DOCUMENT TEXT to answer a legal/ordinance question, you MUST append this exact tag at the very end of your response: <USED_CONTEXT>
 
         --- DOCUMENT TEXT ---
         {context}
@@ -73,13 +76,24 @@ def ask_batas(question):
         {question}
         """
 
-        # 3. Invoke LLM
+        # 5. Invoke LLM
         response = llm.invoke(prompt)
+        raw_answer = response.content.strip()
 
-        # 4. Build and print output
+        # 6. The Gatekeeper: Filter sources based on the LLM's Secret Tag
+        if "<USED_CONTEXT>" in raw_answer:
+            # The AI actually read the law. Remove the tag from the text and keep the sources.
+            final_answer = raw_answer.replace("<USED_CONTEXT>", "").strip()
+            final_sources = sources 
+        else:
+            # It was just a greeting or general chat! Wipe the sources array.
+            final_answer = raw_answer
+            final_sources = [] 
+
+        # 7. Build and print output
         output = {
-            "answer": response.content.strip(),
-            "sources": sources
+            "answer": final_answer,
+            "sources": final_sources
         }
         print(json.dumps(output))
 
@@ -95,4 +109,4 @@ if __name__ == "__main__":
         else:
             ask_batas(user_query)
     else:
-        print("Error: No question provided.")
+        print(json.dumps({"answer": "Error: No question provided.", "sources": []}))
