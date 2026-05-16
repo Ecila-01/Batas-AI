@@ -1,129 +1,204 @@
 import os
-import argparse
 import requests
-import io
-import sys
-import pymupdf
+import argparse
 import cloudinary
 import cloudinary.api
 from dotenv import load_dotenv
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_community.document_loaders import PyMuPDFLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
+import fitz 
+import pytesseract
+from PIL import Image
 from langchain_core.documents import Document
+import sys
+import io
 
-# Force standard output to handle UTF-8 cleanly if Windows terminal supports it
-if sys.platform == "win32":
-    sys.stdout.reconfigure(encoding='utf-8')
+load_dotenv()
+print(f"🔑 Debug Check - API Key Loaded: {os.getenv('GOOGLE_API_KEY')[:10]}...")
 
-# 1. LOCK THE DIRECTORY PATHS AND LOAD LOCAL CORES
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-load_dotenv(os.path.join(BASE_DIR, '.env'))
-
-# Configure the official Cloudinary SDK dynamically from environment variables
-cloudinary.config(
-    cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
-    api_key=os.getenv("CLOUDINARY_API_KEY"),
-    api_secret=os.getenv("CLOUDINARY_API_SECRET"),
-    secure=True
+if sys.platform == 'win32':
+    # If running on your local Windows PC
+    pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+else:
+    # If running on the Render Linux Container
+    pytesseract.pytesseract.tesseract_cmd = '/usr/bin/tesseract'
+    
+cloudinary.config( 
+    cloud_name = os.getenv("CLOUDINARY_CLOUD_NAME"), 
+    api_key = os.getenv("CLOUDINARY_API_KEY"), 
+    api_secret = os.getenv("CLOUDINARY_API_SECRET"),
+    secure = True
 )
 
-# =========================================================================
-# 2. DYNAMIC CROSS-PLATFORM TESSERACT CONFIGURATION (WINDOWS & LINUX)
-# =========================================================================
-if sys.platform == "win32":
-    # Local Windows Environment Development Configuration
-    tesseract_folder = r"C:\Program Files\Tesseract-OCR"
-    os.environ["TESSDATA_PREFIX"] = os.path.join(tesseract_folder, "tessdata")
-    os.environ["PATH"] += os.pathsep + tesseract_folder
-else:
-    # Live Linux Cloud Production Environment Configuration (Render Docker)
-    # On Linux containers, installing tesseract via apt handles binary locations.
-    # We explicitly define the fallback data paths for languages if needed.
-    if os.path.exists("/usr/share/tesseract-ocr/5.00/tessdata"):
-        os.environ["TESSDATA_PREFIX"] = "/usr/share/tesseract-ocr/5.00/tessdata"
-    elif os.path.exists("/usr/share/tesseract-ocr/tessdata"):
-        os.environ["TESSDATA_PREFIX"] = "/usr/share/tesseract-ocr/tessdata"
+embeddings = GoogleGenerativeAIEmbeddings(
+    model="gemini-embedding-2",             
+    google_api_key=os.getenv("GOOGLE_API_KEY")
+)
 
-INDEX_PATH = os.path.join(BASE_DIR, "batas_index")
-
-def extract_text_from_url_with_ocr(cloudinary_url):
-    """Downloads a protected PDF from Cloudinary using SDK headers and extracts text using OCR."""
-    print("Downloading protected file stream from Cloudinary via SDK...")
-    try:
-        api_key = os.getenv("CLOUDINARY_API_KEY")
-        api_secret = os.getenv("CLOUDINARY_API_SECRET")
-        
-        if not api_key or not api_secret:
-            raise ValueError("Cloudinary configuration strings could not be resolved inside env.")
-
-        # Realize download utilizing standard session configurations with authorization headers
-        response = requests.get(cloudinary_url, auth=(api_key, api_secret))
-        response.raise_for_status() 
-        
-        # Open the PDF byte stream natively in memory
-        pdf_stream = io.BytesIO(response.content)
-        doc = pymupdf.open(stream=pdf_stream, filetype="pdf")
-        
-        print(f"Extracting text via OCR ({len(doc)} pages)...")
-        full_text = ""
-        for page_num in range(len(doc)):
-            page = doc.load_page(page_num)
-            try:
-                tp = page.get_textpage_ocr(flags=3, language="eng")
-                text = page.get_text(textpage=tp)
-                full_text += f"\n{text}"
-            except Exception as e:
-                print(f"Warning: Could not OCR page {page_num + 1}")
-        return full_text
-    except Exception as e:
-        print(f"Error: Failed to download or process cloud file: {str(e)}")
-        return ""
-
-def main():
-    # 3. SET UP PARSER TO ACCEPT URL FROM NODE
-    parser = argparse.ArgumentParser(description="Batas AI RAG Ingestion Pipeline")
-    parser.add_argument('--url', type=str, required=True, help='The secure Cloudinary URL of the PDF file')
-    args = parser.parse_args()
-
-    cloudinary_url = args.url
-    filename = cloudinary_url.split('/')[-1] 
-
-    # 4. PROCESS THE INCOMING DOCUMENT
-    extracted_text = extract_text_from_url_with_ocr(cloudinary_url)
+def process_and_split_pdf(file_path):
+    """Helper function to extract text, with an automatic OS-aware OCR fallback"""
     
-    if not extracted_text.strip():
-        print("Error: No text could be extracted from this document.")
+    # 1. Try standard text extraction first
+    loader = PyMuPDFLoader(file_path)
+    docs = loader.load()
+    
+    # Check if the PDF actually contained text (checking if pages are mostly empty)
+    has_text = any(len(doc.page_content.strip()) > 10 for doc in docs)
+    
+    # 2. Trigger the Tesseract OCR Fallback if it's an image
+    if not has_text:
+        print("📸 Scanned image detected! Waking up Tesseract OCR...")
+        ocr_text = ""
+        
+        pdf_document = fitz.open(file_path)
+        for page_num in range(len(pdf_document)):
+            print(f"   👁️ Scanning page {page_num + 1}...")
+            page = pdf_document.load_page(page_num)
+            
+            # Convert PDF page to a 300 DPI image for accurate reading
+            pix = page.get_pixmap(dpi=300) 
+            img = Image.open(io.BytesIO(pix.tobytes("png")))
+            
+            # Feed the image to Tesseract
+            page_text = pytesseract.image_to_string(img)
+            ocr_text += page_text + "\n\n"
+        
+        # Package the text back into Langchain's format
+        docs = [Document(page_content=ocr_text, metadata={"source": file_path})]
+
+    # 3. Chop it up
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+    return text_splitter.split_documents(docs)
+
+def add_single_document(url):
+    """Triggered by Node.js when a new file is uploaded"""
+    print(f"🚀 Single file upload detected! Downloading from Cloudinary...")
+    temp_pdf_path = "temp_single_upload.pdf"
+    
+    try:
+        # 1. Download the new file
+        response = requests.get(url)
+        with open(temp_pdf_path, 'wb') as f:
+            f.write(response.content)
+
+        # 2. Chop it up (with automatic Tesseract OCR fallback)
+        new_chunks = process_and_split_pdf(temp_pdf_path)
+        
+        if not new_chunks:
+            print("⚠️ No chunks generated from document. Aborting.")
+            os.remove(temp_pdf_path)
+            return
+
+        # 3. Load the EXISTING database instance sitting in the container
+        print("🧠 Opening existing FAISS database...")
+        master_vectorstore = FAISS.load_local("Batas_index", embeddings, allow_dangerous_deserialization=True)
+        
+        # 4. Inject the new knowledge via safe isolated local micro-merges
+        print(f"💉 Merging {len(new_chunks)} chunks of new knowledge sequentially...")
+        for i, chunk in enumerate(new_chunks):
+            text_content = chunk.page_content
+            metadata_content = chunk.metadata
+            
+            # Safely fetch individual raw float list vector
+            single_vector = embeddings.embed_documents([text_content])
+            chunk_pair = list(zip([text_content], single_vector))
+            
+            # Construct standalone micro-instance matrix slice
+            chunk_vectorstore = FAISS.from_embeddings(chunk_pair, embeddings, metadatas=[metadata_content])
+            
+            # Deep merge internal matrices natively
+            master_vectorstore.merge_from(chunk_vectorstore)
+            print(f"   📥 Vectorized and incremental-merged chunk [{i + 1}/{len(new_chunks)}] successfully!")
+        
+        # 5. Overwrite changes back to disk storage
+        master_vectorstore.save_local("Batas_index")
+        
+        os.remove(temp_pdf_path)
+        print("✅ Success: Local database instance updated with new document chunks!")
+        
+    except Exception as e:
+        print(f"❌ Failed to update database: {e}")
+
+def run_master_sync(folder_name="Batas"):
+    """Triggered manually to build the whole database from scratch"""
+    print(f"🔍 Searching Cloudinary folder: '{folder_name}'...")
+    pdf_urls = []
+    
+    try:
+        response = cloudinary.api.resources(
+            type="upload", 
+            resource_type="raw", 
+            prefix=f"{folder_name}/", 
+            max_results=500
+        )
+        
+        for item in response.get('resources', []):
+            if item['secure_url'].lower().endswith('.pdf'):
+                pdf_urls.append(item['secure_url'])
+                
+    except Exception as e:
+        print(f"❌ Error connecting to Cloudinary: {e}")
         return
 
-    print("Chunking legal data blocks...")
-    document = Document(page_content=extracted_text, metadata={"source": filename, "url": cloudinary_url})
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-    chunks = text_splitter.split_documents([document])
+    if not pdf_urls:
+        print("⚠️ No PDFs found. Exiting.")
+        return
+
+    print(f"📚 Found {len(pdf_urls)} PDFs. Starting master ingestion...")
+    all_document_chunks = []
     
-    print(f"Created {len(chunks)} text chunks. Loading embeddings framework...")
-    embeddings = GoogleGenerativeAIEmbeddings(
-    model="models/embedding-001", 
-    google_api_key=os.getenv("GOOGLE_API_KEY")
-    )
-
-    # 5. SMART APPEND LOGIC
-    if os.path.exists(INDEX_PATH):
-        print("Existing FAISS index found. Appending new vector blocks to brain...")
+    for index, url in enumerate(pdf_urls):
+        print(f"⬇️ [{index + 1}/{len(pdf_urls)}] Downloading: {url.split('/')[-1]}")
+        temp_pdf_path = "temp_download.pdf"
         try:
-            vector_store = FAISS.load_local(INDEX_PATH, embeddings, allow_dangerous_deserialization=True)
-            vector_store.add_documents(chunks)
-        except Exception as e:
-            print(f"Warning: Could not load existing index cleanly ({str(e)}). Generating fresh framework...")
-            vector_store = FAISS.from_documents(chunks, embeddings)
-    else:
-        print("No existing index found. Initializing fresh baseline FAISS matrix...")
-        vector_store = FAISS.from_documents(chunks, embeddings)
+            response = requests.get(url)
+            with open(temp_pdf_path, 'wb') as f:
+                f.write(response.content)
 
-    # 6. SAVE BACK TO THE SERVER DISK
-    print("Syncing localized FAISS binary stores to disk...")
-    vector_store.save_local(INDEX_PATH)
-    print("Success: Ingestion complete for this document!")
+            splits = process_and_split_pdf(temp_pdf_path)
+            all_document_chunks.extend(splits)
+            os.remove(temp_pdf_path)
+        except Exception as e:
+            print(f"⚠️ Failed to process {url}. Error: {e}")
+
+    if all_document_chunks:
+        print(f"🧠 Generating massive FAISS index with {len(all_document_chunks)} chunks...")
+        
+        # 1. Initialize the master baseline structure using the first chunk primitive safely
+        first_text = all_document_chunks[0].page_content
+        first_meta = all_document_chunks[0].metadata
+        first_vector = embeddings.embed_documents([first_text])
+        
+        print("🏗️ Initializing master database baseline instance...")
+        seed_pair = list(zip([first_text], first_vector))
+        master_vectorstore = FAISS.from_embeddings(seed_pair, embeddings, metadatas=[first_meta])
+        
+        # 2. Process each remaining item as its own micro-database slice and merge them smoothly
+        print("💉 Merging chunks using isolated local instances to completely bypass wrapper bugs...")
+        for i in range(1, len(all_document_chunks)):
+            chunk = all_document_chunks[i]
+            text_content = chunk.page_content
+            metadata_content = chunk.metadata
+            
+            single_vector = embeddings.embed_documents([text_content])
+            chunk_pair = list(zip([text_content], single_vector))
+            
+            chunk_vectorstore = FAISS.from_embeddings(chunk_pair, embeddings, metadatas=[metadata_content])
+            master_vectorstore.merge_from(chunk_vectorstore)
+            print(f"   📥 Vectorized and merged chunk [{i + 1}/{len(all_document_chunks)}] successfully!")
+
+        # 3. Save the master binary baseline safely
+        master_vectorstore.save_local("Batas_index")
+        print("\n✅ SUCCESS: Master Index safely compiled and saved to 'Batas_index/'!")
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--url', type=str, help='Cloudinary URL for single file injection')
+    args = parser.parse_args()
+
+    if args.url:
+        add_single_document(args.url)
+    else:
+        run_master_sync()

@@ -13,7 +13,7 @@ ACTIVE_MODEL = "gemini-2.5-flash"
 def ask_batas(question):
     try:
         embeddings = GoogleGenerativeAIEmbeddings(
-            model="models/embedding-001", 
+            model="gemini-embedding-2",                 # 🎯 The exact verified production name!
             google_api_key=os.getenv("GOOGLE_API_KEY")
         )
         vector_db = FAISS.load_local("batas_index", embeddings, allow_dangerous_deserialization=True)
