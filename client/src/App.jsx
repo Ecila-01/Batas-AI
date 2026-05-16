@@ -154,7 +154,7 @@ function App() {
   return (
     <div className="app-container">
       
-      {/* SIDEBAR */}
+      {/*SIDEBAR*/}
       <aside className="sidebar">
         <div className="sidebar-header">
           <div className="logo-with-text-container">
