@@ -1,0 +1,49 @@
+# ====================================================================
+# Batas AI Master Workspace GitIgnore
+# ====================================================================
+
+# --- System & OS Overheads ---
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.bak
+
+# --- Node.js Dependencies (Frontend & Backend Packages) ---
+**/node_modules/
+package-lock.json
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# --- Environment Configurations (API Keys & Database Credentials) ---
+**/.env
+**/.env.local
+**/.env.development.local
+**/.env.test.local
+**/.env.production.local
+
+# --- Production Builds ---
+**/dist/
+**/build/
+.out/
+
+# --- Python Engine Virtual Environments & Caching ---
+**/venv/
+**/.venv/
+ENV/
+env/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+**/.pytest_cache/
+
+# --- Local Databases & RAG Vector Indices ---
+# We block the local binary indexing folder since it's rebuilt from raw source documents
+**/ai_service/batas_index/
+
+# --- Temporary/User Document Assets ---
+# Blocks uploaded test pdf files from cluttering your repository storage limits
+**/ai_service/ordinances/*.pdf
