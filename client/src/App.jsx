@@ -8,7 +8,8 @@ function App() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [activeModel, setActiveModel] = useState('Loading Model...');
-  
+  const [isReady, setIsReady] = useState(false);
+  const [statusMessage, setStatusMessage] = useState("Batas AI is initializing database...");
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
 
@@ -24,7 +25,26 @@ function App() {
   };
 
   const [sessionId] = useState(getSessionId());
+  useEffect(() => {
+    const checkSystemStatus = async () => {
+        try {
+            const response = await fetch(`${API_URL}/api/model`);
+            const data = await response.json();
+            
+            if (data.isInitializing) {
+                // If the system is still building vectors, check again in 5 seconds
+                setTimeout(checkSystemStatus, 5000);
+            } else {
+                setIsReady(true);
+                setStatusMessage("Ask a question about Baguio Ordinances...");
+            }
+        } catch (error) {
+            console.error("Status check failed", error);
+        }
+    };
 
+    checkSystemStatus();
+}, []);
   useEffect(() => {
     const fetchHistory = async () => {
       try {

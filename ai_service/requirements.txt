@@ -9,3 +9,5 @@ langchain-google-genai
 pytesseract
 pillow
 pymupdf
+qdrant-client
+langchain-qdrant

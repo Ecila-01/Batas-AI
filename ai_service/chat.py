@@ -2,26 +2,36 @@ import sys
 import os
 from dotenv import load_dotenv
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langchain_community.vectorstores import FAISS
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_qdrant import QdrantVectorStore
+from qdrant_client import QdrantClient
 
 load_dotenv()
 
-# NEW: Define the active model globally so the frontend can grab it!
 ACTIVE_MODEL = "gemini-2.5-flash"
+COLLECTION_NAME = "Batas"
 
 def ask_batas(question):
     try:
         embeddings = GoogleGenerativeAIEmbeddings(
-            model="gemini-embedding-2",                 # 🎯 The exact verified production name!
+            model="gemini-embedding-2",
             google_api_key=os.getenv("GOOGLE_API_KEY")
         )
-        vector_db = FAISS.load_local("batas_index", embeddings, allow_dangerous_deserialization=True)
 
-        # Use the global variable here
+        client = QdrantClient(
+            url=os.getenv("QDRANT_URL"),
+            api_key=os.getenv("QDRANT_API_KEY")
+        )
+
+        vectorstore = QdrantVectorStore(
+            client=client,
+            collection_name=COLLECTION_NAME,
+            embedding=embeddings
+        )
+
         llm = ChatGoogleGenerativeAI(model=ACTIVE_MODEL, temperature=0)
 
-        relevant_docs = vector_db.similarity_search(question, k=4)
+        relevant_docs = vectorstore.similarity_search(question, k=4)
         context = "\n\n".join([doc.page_content for doc in relevant_docs])
 
         prompt = f"""
@@ -38,18 +48,18 @@ def ask_batas(question):
         --- USER QUESTION ---
         {question}
         """
-        
+
         response = llm.invoke(prompt)
         print(response.content.strip())
-        
+
     except Exception as e:
         print(f"Error processing request: {str(e)}")
+
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:
         user_query = sys.argv[1]
-        
-        # NEW: If Node.js asks for the model, just print the model name
+
         if user_query == "--get-model":
             print(ACTIVE_MODEL)
         else:

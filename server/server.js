@@ -115,6 +115,7 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
         cwd: path.resolve(__dirname, '../ai_service'),
         env: {
             ...process.env,
+            PYTHONIOENCODING: 'utf-8', 
             CLOUDINARY_API_KEY: process.env.CLOUDINARY_API_KEY,
             CLOUDINARY_API_SECRET: process.env.CLOUDINARY_API_SECRET,
             CLOUDINARY_CLOUD_NAME: process.env.CLOUDINARY_CLOUD_NAME
@@ -218,18 +219,17 @@ app.post('/api/ask', (req, res) => {
 // 4. PRODUCTION-READY NETWORK BINDINGS
 // ==========================================
 const PORT = process.env.PORT || 5000;
-// 🔥 FIXED: Force binding to 0.0.0.0 in production so Render can see the container port
 const HOST = process.env.NODE_ENV === 'production' ? '0.0.0.0' : 'localhost';
 
 app.listen(PORT, HOST, () => {
     const displayHost = HOST === '0.0.0.0' ? 'Baguio Cloud Environment' : HOST;
     console.log(`🚀 Batas API Server is live and listening at http://${displayHost}:${PORT}`);
 
-    // 🔥 Launch the background master sync securely with environment variables
+    //Launch the background master sync securely with environment variables
     console.log("⚙️ Waking up asynchronous background master sync...");
     const initSync = spawn(PYTHON_CMD, ['-u', 'bulk_ingest.py'], {
         cwd: path.resolve(__dirname, '../ai_service'),
-        env: { ...process.env } // Safely passes the API keys!
+        env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
     });
 
     initSync.stdout.on('data', (data) => {
@@ -241,7 +241,7 @@ app.listen(PORT, HOST, () => {
     });
 
     initSync.on('close', (code) => {
-        isSystemInitializing = false; // 👈 THE GATEWAY OPENS!
-        console.log("⚡ [SYSTEM READY]: Master vector baseline compiled. AI is now unlocked!");
+        isSystemInitializing = false;
+        console.log(" [SYSTEM READY]: Master vector baseline compiled. AI is now unlocked!");
     });
 });
