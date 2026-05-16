@@ -56,19 +56,19 @@ def ask_batas(question):
                 sources.append({'name': source, 'url': url})
             if len(sources) == 1:
                 break
-
+        print(f"[Debug] Context being sent to LLM:\n{context}", file=sys.stderr)
         # 2. Build prompt
         prompt = f"""
         You are Batas, a polite and professional AI assistant specializing in analyzing local laws, ordinances, and legal documents from any municipality.
-        
+
         INSTRUCTIONS:
         1. GREETINGS & CHAT: If the user simply says hello, greets you, or says thank you, respond warmly and naturally.
-        2. DOCUMENT ANALYSIS: If the user asks a specific question about a law or ordinance, you must use ONLY the 'DOCUMENT TEXT' provided below to answer. 
-        3. MISSING INFORMATION: If the answer is not contained within the 'DOCUMENT TEXT', do not hallucinate or make up laws. Instead, gracefully say something like: "I do not see that information in the currently loaded documents. However, you can use the 'Upload Ordinance' button to add your specific PDF, and I will gladly analyze it for you."
+        2. DOCUMENT ANALYSIS: Answer questions using the DOCUMENT TEXT below. The text may contain minor OCR errors (e.g. "Adember" means "Member", "Ion," means "Hon.") — interpret these intelligently and still answer.
+        3. MISSING INFORMATION: Only say you cannot find information if it is genuinely absent from the document text entirely. Do not refuse due to minor spelling errors or formatting issues in the scanned text.
 
         --- DOCUMENT TEXT ---
         {context}
-        
+
         --- USER QUESTION ---
         {question}
         """
