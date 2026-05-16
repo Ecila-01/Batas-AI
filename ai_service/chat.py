@@ -1,5 +1,6 @@
 import sys
 import os
+import re
 from dotenv import load_dotenv
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -31,7 +32,17 @@ def ask_batas(question):
 
         llm = ChatGoogleGenerativeAI(model=ACTIVE_MODEL, temperature=0)
 
-        relevant_docs = vectorstore.similarity_search(question, k=4)
+        relevant_docs = vectorstore.similarity_search(question, k=6)
+
+        mentioned = re.search(r'ordinance\s+(?:no\.?\s*|number\s*)?(\d+)', question, re.IGNORECASE)
+
+        if mentioned:
+            ord_num = mentioned.group(1)
+            # Prioritize chunks whose source filename contains the ordinance number
+            prioritized = [d for d in relevant_docs if ord_num in d.metadata.get('source', '')]
+            others = [d for d in relevant_docs if ord_num not in d.metadata.get('source', '')]
+            relevant_docs = (prioritized + others)[:4]  # Put matching source first
+
         context = "\n\n".join([doc.page_content for doc in relevant_docs])
 
         # 1. Extract sources first
