@@ -14,6 +14,8 @@ from PIL import Image
 from langchain_core.documents import Document
 import sys
 import io
+import gc
+
 
 load_dotenv()
 print(f"🔑 Debug Check - API Key Loaded: {os.getenv('GOOGLE_API_KEY')[:10]}...")
@@ -38,13 +40,12 @@ embeddings = GoogleGenerativeAIEmbeddings(
 )
 
 def process_and_split_pdf(file_path):
-    """Helper function to extract text, with an automatic OS-aware OCR fallback"""
+    """Helper function to extract text with an ultra-low RAM OCR fallback"""
     
     # 1. Try standard text extraction first
     loader = PyMuPDFLoader(file_path)
     docs = loader.load()
     
-    # Check if the PDF actually contained text (checking if pages are mostly empty)
     has_text = any(len(doc.page_content.strip()) > 10 for doc in docs)
     
     # 2. Trigger the Tesseract OCR Fallback if it's an image
@@ -57,20 +58,34 @@ def process_and_split_pdf(file_path):
             print(f"   👁️ Scanning page {page_num + 1}...")
             page = pdf_document.load_page(page_num)
             
-            # Convert PDF page to a 300 DPI image for accurate reading
+            # Convert PDF page to a 300 DPI image
             pix = page.get_pixmap(dpi=300) 
-            img = Image.open(io.BytesIO(pix.tobytes("png")))
+            img_bytes = pix.tobytes("png")
+            img = Image.open(io.BytesIO(img_bytes))
             
             # Feed the image to Tesseract
             page_text = pytesseract.image_to_string(img)
             ocr_text += page_text + "\n\n"
+            
+            # 🔥 CRITICAL 512MB RAM COOLDOWN PACK:
+            # Force close and wipe the heavy memory buffers explicitly on every iteration
+            img.close()
+            del pix
+            del img_bytes
+            del img
+            del page
+            gc.collect()  # Force Python to instantly free the RAM back to Linux
         
-        # Package the text back into Langchain's format
+        pdf_document.close()
+        del pdf_document
+        gc.collect()
+        
         docs = [Document(page_content=ocr_text, metadata={"source": file_path})]
 
     # 3. Chop it up
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     return text_splitter.split_documents(docs)
+
 
 def add_single_document(url):
     """Triggered by Node.js when a new file is uploaded"""
