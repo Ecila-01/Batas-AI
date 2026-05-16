@@ -218,3 +218,5 @@ if __name__ == "__main__":
         add_single_document(args.url)
     else:
         run_master_sync()
+    print("👋 Ingestion process complete. Handing over control to the web server...")
+    sys.exit(0)

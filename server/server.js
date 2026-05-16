@@ -31,7 +31,6 @@ const chatSchema = new mongoose.Schema({
     createdAt: { type: Date, default: Date.now, expires: 86400 } 
 });
 
-// Create the model
 const Chat = mongoose.model('Chat', chatSchema);
 
 // ==========================================
@@ -70,8 +69,10 @@ const upload = multer({
 // ==========================================
 // ENVIRONMENT AWARE PYTHON EXECUTABLE BINDING
 // ==========================================
-// Uses the global Linux executable 'python3' when on Render, falls back to local virtual env for Windows development
-const PYTHON_CMD = process.env.NODE_ENV === 'production' ? 'python3' : '.venv/Scripts/python.exe';
+// Uses an absolute resolution scheme so paths don't break across nested Docker dirs
+const PYTHON_CMD = process.env.NODE_ENV === 'production' 
+    ? 'python3' 
+    : path.resolve(__dirname, '../ai_service/.venv/Scripts/python.exe');
 
 // ==========================================
 // 3. API ENDPOINTS
@@ -80,7 +81,7 @@ const PYTHON_CMD = process.env.NODE_ENV === 'production' ? 'python3' : '.venv/Sc
 // Fetch the active AI Model from Python
 app.get('/api/model', (req, res) => {
     const pythonProcess = spawn(PYTHON_CMD, ['-u', 'chat.py', '--get-model'], {
-        cwd: path.join(__dirname, '../ai_service') 
+        cwd: path.resolve(__dirname, '../ai_service') 
     });
 
     let modelName = '';
@@ -109,9 +110,8 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
     console.log(`\n☁️ File securely hosted on Cloudinary: ${cloudinaryUrl}`);
     console.log("⚙️ Triggering AI Data Ingestion via Remote Stream Address...");
 
-    // Spawning data ingestion script passing down environmental keys dynamically
     const pythonProcess = spawn(PYTHON_CMD, ['-u', 'bulk_ingest.py', '--url', cloudinaryUrl], {
-        cwd: path.join(__dirname, '../ai_service'),
+        cwd: path.resolve(__dirname, '../ai_service'),
         env: {
             ...process.env,
             CLOUDINARY_API_KEY: process.env.CLOUDINARY_API_KEY,
@@ -175,7 +175,7 @@ app.post('/api/ask', (req, res) => {
     console.log("Waking up Batas AI...");
 
     const pythonProcess = spawn(PYTHON_CMD, ['-u', 'chat.py', userQuestion], {
-        cwd: path.join(__dirname, '../ai_service') 
+        cwd: path.resolve(__dirname, '../ai_service') 
     });
 
     let aiAnswer = '';
@@ -208,12 +208,14 @@ app.post('/api/ask', (req, res) => {
     });
 });
 
+// ==========================================
+// 4. PRODUCTION-READY NETWORK BINDINGS
+// ==========================================
 const PORT = process.env.PORT || 5000;
-const HOST = process.env.HOST || 'localhost';
+// 🔥 FIXED: Force binding to 0.0.0.0 in production so Render can see the container port
+const HOST = process.env.NODE_ENV === 'production' ? '0.0.0.0' : 'localhost';
 
-app.listen(PORT, () => {
-    const serverUrl = process.env.NODE_ENV === 'production' 
-        ? `https://${HOST}` 
-        : `http://${HOST}:${PORT}`;
-    console.log(`Batas API is running on ${serverUrl}`);
+app.listen(PORT, HOST, () => {
+    const displayHost = HOST === '0.0.0.0' ? 'Baguio Cloud Environment' : HOST;
+    console.log(`🚀 Batas API Server is live and listening at http://${displayHost}:${PORT}`);
 });
