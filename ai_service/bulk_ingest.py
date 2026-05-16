@@ -58,23 +58,24 @@ def process_and_split_pdf(file_path):
             print(f"   👁️ Scanning page {page_num + 1}...")
             page = pdf_document.load_page(page_num)
             
-            # Convert PDF page to a 300 DPI image
-            pix = page.get_pixmap(dpi=300) 
-            img_bytes = pix.tobytes("png")
+            # 🚀 OPTIMIZATION PACK: Drop DPI to 150 and use a lightweight grayscale format
+            pix = page.get_pixmap(dpi=150, colorspace=fitz.csGRAY) 
+            
+            # Streams highly compressed JPEG bytes instead of heavy raw PNG matrices
+            img_bytes = pix.tobytes("jpeg")
             img = Image.open(io.BytesIO(img_bytes))
             
-            # Feed the image to Tesseract
+            # Feed the lightweight image stream directly to Tesseract
             page_text = pytesseract.image_to_string(img)
             ocr_text += page_text + "\n\n"
             
-            # 🔥 CRITICAL 512MB RAM COOLDOWN PACK:
-            # Force close and wipe the heavy memory buffers explicitly on every iteration
+            # Explicit, aggressive memory cleanup per page iteration
             img.close()
             del pix
             del img_bytes
             del img
             del page
-            gc.collect()  # Force Python to instantly free the RAM back to Linux
+            gc.collect()  # Flush reclaimed heap allocations immediately back to Linux
         
         pdf_document.close()
         del pdf_document
