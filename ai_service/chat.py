@@ -35,7 +35,7 @@ def ask_batas_api(question: str) -> dict:
         llm = ChatGoogleGenerativeAI(model=ACTIVE_MODEL, temperature=0)
 
         # 1. Similarity Search
-        relevant_docs = vectorstore.similarity_search(question, k=6)
+        relevant_docs = vectorstore.similarity_search(question, k=15)
 
         # 2. Heuristic filtering for Ordinance numbers
         mentioned = re.search(r'ordinance\s+(?:no\.?\s*|number\s*)?(\d+)', question, re.IGNORECASE)
@@ -43,7 +43,7 @@ def ask_batas_api(question: str) -> dict:
             ord_num = mentioned.group(1)
             prioritized = [d for d in relevant_docs if ord_num in d.metadata.get('source', '')]
             others = [d for d in relevant_docs if ord_num not in d.metadata.get('source', '')]
-            relevant_docs = (prioritized + others)[:4]
+            relevant_docs = (prioritized + others)[:10]
 
         context = "\n\n".join([doc.page_content for doc in relevant_docs])
 

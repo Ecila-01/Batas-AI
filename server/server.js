@@ -12,10 +12,24 @@ const multer = require('multer');
 const app = express();
 let isSystemInitializing = true;
 
-const clientOrigin = process.env.CLIENT_URL || 'http://localhost:5173';
-const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 
-app.use(cors({ origin: clientOrigin }));
+const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+// Trust both the production Vercel URL and your local development URL
+const allowedOrigins = [
+    process.env.CLIENT_URL, 
+    'http://localhost:5173'
+];
+
+app.use(cors({ 
+    origin: function (origin, callback) {
+        // Allow requests with no origin (like mobile apps or curl) or if it's in our allowed list
+        if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    }
+}));
 app.use(express.json());
 
 // ==========================================
