@@ -75,7 +75,7 @@ def process_and_split_pdf(file_path):
             print(f"   👁️ Scanning page {page_num + 1}...")
             page = pdf_document.load_page(page_num)
             pix = page.get_pixmap(dpi=150, colorspace=fitz.csGRAY)
-            img_bytes = pix.tobytes("png")
+            img_bytes = pix.tobytes("jpeg")
             img = Image.open(io.BytesIO(img_bytes))
             page_text = pytesseract.image_to_string(img)
             ocr_text += page_text + "\n\n"
