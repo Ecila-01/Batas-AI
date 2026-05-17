@@ -1,8 +1,8 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, BackgroundTasks
 from pydantic import BaseModel
 import uvicorn
 from bulk_ingest import add_single_document, run_master_sync
-from chat import ask_batas_api
+from chat import ask_batas_api, ACTIVE_MODEL
 import threading
 
 app = FastAPI()
@@ -13,6 +13,16 @@ class AskRequest(BaseModel):
 class IngestRequest(BaseModel):
     url: str
 
+# 1. FIXED: Render requires a valid root path check to properly map public routing
+@app.get("/")
+def read_root():
+    return {
+        "status": "ok", 
+        "service": "batas-ai-python-microservice",
+        "active_model": ACTIVE_MODEL
+    }
+
+# 2. FIXED: Standardized application tracking health check
 @app.get("/health")
 def health():
     return {"status": "ok"}
@@ -22,19 +32,18 @@ def chat(req: AskRequest):
     result = ask_batas_api(req.question)
     return result
 
+# 3. UPGRADE: Replaced manual threading with FastAPI native BackgroundTasks 
+# to ensure cleaner memory recycling and prevent request thread leaks on Render.
 @app.post("/ingest")
-def ingest(req: IngestRequest):
-    # Run in background so HTTP response returns immediately
-    thread = threading.Thread(target=add_single_document, args=(req.url,))
-    thread.start()
+def ingest(req: IngestRequest, background_tasks: BackgroundTasks):
+    background_tasks.add_task(add_single_document, req.url)
     return {"status": "ingestion started"}
 
 @app.get("/model")
 def get_model():
-    from chat import ACTIVE_MODEL
     return {"model": ACTIVE_MODEL}
 
-# Run master sync on startup in background
+# 4. LIFECYCLE: Executes the master database validation instantly upon boot
 @app.on_event("startup")
 async def startup_event():
     thread = threading.Thread(target=run_master_sync)
