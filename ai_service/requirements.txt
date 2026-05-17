@@ -11,3 +11,5 @@ pillow
 pymupdf
 qdrant-client
 langchain-qdrant
+fastapi
+uvicorn

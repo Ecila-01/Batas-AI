@@ -1,20 +1,20 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const { spawn } = require('child_process');
 const path = require('path');
-const multer = require('multer');
-const fs = require('fs');
 const mongoose = require('mongoose');
 
 // CLOUDINARY STORAGE IMPORTS
 const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
+const multer = require('multer');
 
 const app = express();
 let isSystemInitializing = true;
 
 const clientOrigin = process.env.CLIENT_URL || 'http://localhost:5173';
+const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+
 app.use(cors({ origin: clientOrigin }));
 app.use(express.json());
 
@@ -29,7 +29,7 @@ const chatSchema = new mongoose.Schema({
     sessionId: String,
     question: String,
     answer: String,
-    createdAt: { type: Date, default: Date.now, expires: 86400 } 
+    createdAt: { type: Date, default: Date.now, expires: 86400 }
 });
 
 const Chat = mongoose.model('Chat', chatSchema);
@@ -38,29 +38,28 @@ const Chat = mongoose.model('Chat', chatSchema);
 // 2. CLOUDINARY & MULTER CONFIGURATION
 // ==========================================
 cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
 const storage = new CloudinaryStorage({
-  cloudinary: cloudinary,
-  params: {
-    folder: 'Batas', 
-    format: async (req, file) => 'pdf', 
-    public_id: (req, file) => {
-        // Keep original filename, just replace spaces with underscores
-        const cleanName = file.originalname
-            .replace(/\.pdf$/i, '')        // Remove .pdf extension
-            .replace(/\s+/g, '_')          // Spaces to underscores
-            .replace(/[^a-zA-Z0-9_\-]/g, '') // Remove special characters
-        return cleanName;
+    cloudinary: cloudinary,
+    params: {
+        folder: 'Batas',
+        format: async (req, file) => 'pdf',
+        public_id: (req, file) => {
+            const cleanName = file.originalname
+                .replace(/\.pdf$/i, '')
+                .replace(/\s+/g, '_')
+                .replace(/[^a-zA-Z0-9_\-]/g, '')
+            return cleanName;
+        },
+        resource_type: 'raw'
     },
-    resource_type: 'raw' 
-  },
 });
 
-const upload = multer({ 
+const upload = multer({
     storage: storage,
     fileFilter: (req, file, cb) => {
         if (file.mimetype === 'application/pdf') {
@@ -72,32 +71,37 @@ const upload = multer({
 });
 
 // ==========================================
-// ENVIRONMENT AWARE PYTHON EXECUTABLE BINDING
+// 3. HELPER: Poll Python service until ready
 // ==========================================
-// Uses an absolute resolution scheme so paths don't break across nested Docker dirs
-const PYTHON_CMD = process.env.NODE_ENV === 'production' 
-    ? 'python3' 
-    : path.resolve(__dirname, '../ai_service/.venv/Scripts/python.exe');
+async function waitForAiService() {
+    console.log("⏳ Waiting for AI service to be ready...");
+    while (true) {
+        try {
+            const res = await fetch(`${AI_SERVICE_URL}/health`);
+            if (res.ok) {
+                console.log("✅ AI service is ready!");
+                return;
+            }
+        } catch (e) {
+            // Still starting up
+        }
+        await new Promise(r => setTimeout(r, 3000)); // Retry every 3s
+    }
+}
 
 // ==========================================
-// 3. API ENDPOINTS
+// 4. API ENDPOINTS
 // ==========================================
 
-// Fetch the active AI Model from Python
-app.get('/api/model', (req, res) => {
-    const pythonProcess = spawn(PYTHON_CMD, ['-u', 'chat.py', '--get-model'], {
-        cwd: path.resolve(__dirname, '../ai_service') 
-    });
-
-    let modelName = '';
-
-    pythonProcess.stdout.on('data', (data) => {
-        modelName += data.toString();
-    });
-
-    pythonProcess.on('close', () => {
-        res.json({ model: modelName.trim() || 'Unknown Model', isInitializing: isSystemInitializing });
-    });
+// Fetch the active AI Model from Python service
+app.get('/api/model', async (req, res) => {
+    try {
+        const response = await fetch(`${AI_SERVICE_URL}/model`);
+        const data = await response.json();
+        res.json({ model: data.model || 'Unknown Model', isInitializing: isSystemInitializing });
+    } catch (error) {
+        res.json({ model: 'Unknown Model', isInitializing: isSystemInitializing });
+    }
 });
 
 // Ping Endpoint to keep the free server awake!
@@ -106,42 +110,32 @@ app.get('/api/ping', (req, res) => {
 });
 
 // Production Cloudinary Upload Route
-app.post('/api/upload', upload.single('file'), (req, res) => {
+app.post('/api/upload', upload.single('file'), async (req, res) => {
     if (!req.file) {
         return res.status(400).json({ error: "No file uploaded or invalid file type." });
     }
 
-    const cloudinaryUrl = req.file.path; 
+    const cloudinaryUrl = req.file.path;
     console.log(`\n☁️ File securely hosted on Cloudinary: ${cloudinaryUrl}`);
-    console.log("⚙️ Triggering AI Data Ingestion via Remote Stream Address...");
+    console.log("⚙️ Triggering AI Data Ingestion via Python service...");
 
-    const pythonProcess = spawn(PYTHON_CMD, ['-u', 'bulk_ingest.py', '--url', cloudinaryUrl], {
-        cwd: path.resolve(__dirname, '../ai_service'),
-        env: {
-            ...process.env,
-            PYTHONIOENCODING: 'utf-8', 
-            CLOUDINARY_API_KEY: process.env.CLOUDINARY_API_KEY,
-            CLOUDINARY_API_SECRET: process.env.CLOUDINARY_API_SECRET,
-            CLOUDINARY_CLOUD_NAME: process.env.CLOUDINARY_CLOUD_NAME
-        }
-    });
+    try {
+        // Fire and forget — Python service handles ingestion in background
+        fetch(`${AI_SERVICE_URL}/ingest`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: cloudinaryUrl })
+        }).catch(err => console.error('❌ Ingest request failed:', err));
 
-    pythonProcess.stdout.on('data', (data) => {
-        console.log(`[Ingest Output]: ${data.toString().trim()}`);
-    });
-
-    pythonProcess.stderr.on('data', (data) => {
-        console.log(`[Ingest Status]: ${data.toString().trim()}`);
-    });
-
-    pythonProcess.on('close', (code) => {
-        console.log("✅ AI successfully absorbed the new cloud document!");
-        res.json({ 
+        res.json({
             message: "File uploaded and AI brain updated successfully!",
             filename: req.file.originalname,
             url: cloudinaryUrl
         });
-    });
+    } catch (error) {
+        console.error('❌ Upload error:', error);
+        res.status(500).json({ error: "Failed to trigger ingestion." });
+    }
 });
 
 // Fetch Chat History Route
@@ -169,13 +163,15 @@ app.delete('/api/history/:sessionId', async (req, res) => {
     }
 });
 
-// Chat Route 
-app.post('/api/ask', (req, res) => {
+// Chat Route
+app.post('/api/ask', async (req, res) => {
     if (isSystemInitializing) {
-        return res.status(503).json({ 
-            answer: "Batas AI is currently initializing the database from the cloud. Please wait about 2 minutes and try asking again!" 
+        return res.status(503).json({
+            answer: "Batas AI is currently initializing the database from the cloud. Please wait about 2 minutes and try asking again!",
+            sources: []
         });
     }
+
     const { question: userQuestion, sessionId } = req.body;
 
     if (!userQuestion || !sessionId) {
@@ -183,38 +179,22 @@ app.post('/api/ask', (req, res) => {
     }
 
     console.log(`\nUser [${sessionId}] asked: "${userQuestion}"`);
-    console.log("Waking up Batas AI...");
+    console.log("Forwarding to AI service...");
 
-    const pythonProcess = spawn(PYTHON_CMD, ['-u', 'chat.py', userQuestion], {
-        cwd: path.resolve(__dirname, '../ai_service') 
-    });
+    try {
+        const aiResponse = await fetch(`${AI_SERVICE_URL}/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ question: userQuestion })
+        });
 
-    let aiAnswer = '';
+        const data = await aiResponse.json();
+        const finalAnswer = data.answer || "I couldn't generate a response.";
+        const sources = data.sources || [];
 
-    pythonProcess.stdout.on('data', (data) => {
-        aiAnswer += data.toString();
-    });
+        console.log("✅ Successfully generated response!");
 
-    pythonProcess.stderr.on('data', (data) => {
-        console.log(`[Python Status]: ${data.toString().trim()}`);
-    });
-
-    pythonProcess.on('close', async (code) => {
-        console.log("Successfully generated response!");
-        
-        let finalAnswer = '';
-        let sources = [];
-        
-        try {
-            const parsed = JSON.parse(aiAnswer.trim());
-            finalAnswer = parsed.answer;
-            sources = parsed.sources;
-        } catch {
-            // Fallback if parsing fails
-            finalAnswer = aiAnswer.trim();
-            sources = [];
-        }
-
+        // Save to MongoDB
         try {
             const newChat = new Chat({
                 sessionId: sessionId,
@@ -228,36 +208,29 @@ app.post('/api/ask', (req, res) => {
         }
 
         res.json({ answer: finalAnswer, sources: sources });
-    });
+
+    } catch (error) {
+        console.error('❌ AI service error:', error);
+        res.status(500).json({
+            answer: "Error: Cannot reach the AI service. Please try again.",
+            sources: []
+        });
+    }
 });
 
 // ==========================================
-// 4. PRODUCTION-READY NETWORK BINDINGS
+// 5. PRODUCTION-READY NETWORK BINDINGS
 // ==========================================
 const PORT = process.env.PORT || 5000;
 const HOST = process.env.NODE_ENV === 'production' ? '0.0.0.0' : 'localhost';
 
-app.listen(PORT, HOST, () => {
-    const displayHost = HOST === '0.0.0.0' ? 'Baguio Cloud Environment' : HOST;
-    console.log(`🚀 Batas API Server is live and listening at http://${displayHost}:${PORT}`);
+app.listen(PORT, HOST, async () => {
+    const displayHost = HOST === '0.0.0.0' ? 'Cloud Environment' : HOST;
+    console.log(`🚀 Batas API Server is live at http://${displayHost}:${PORT}`);
+    console.log(`🔗 AI Service URL: ${AI_SERVICE_URL}`);
 
-    //Launch the background master sync securely with environment variables
-    console.log("⚙️ Waking up asynchronous background master sync...");
-    const initSync = spawn(PYTHON_CMD, ['-u', 'bulk_ingest.py'], {
-        cwd: path.resolve(__dirname, '../ai_service'),
-        env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
-    });
-
-    initSync.stdout.on('data', (data) => {
-        console.log(`[Sync]: ${data.toString().trim()}`);
-    });
-
-    initSync.stderr.on('data', (data) => {
-        console.log(`[Sync Error]: ${data.toString().trim()}`);
-    });
-
-    initSync.on('close', (code) => {
-        isSystemInitializing = false;
-        console.log(" [SYSTEM READY]: Master vector baseline compiled. AI is now unlocked!");
-    });
+    // Wait for Python service to finish its startup sync
+    await waitForAiService();
+    isSystemInitializing = false;
+    console.log("⚡ [SYSTEM READY]: AI service confirmed ready. Batas is now unlocked!");
 });

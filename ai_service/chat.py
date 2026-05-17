@@ -13,7 +13,8 @@ load_dotenv()
 ACTIVE_MODEL = "gemini-2.5-flash"
 COLLECTION_NAME = "Batas"
 
-def ask_batas(question):
+def ask_batas_api(question: str) -> dict:
+    """Called by FastAPI — returns a dict directly."""
     try:
         embeddings = GoogleGenerativeAIEmbeddings(
             model="gemini-embedding-2",
@@ -58,7 +59,7 @@ def ask_batas(question):
             if len(sources) == 1:
                 break
 
-        # 4. THE STRICT PROMPT
+        # 4. Prompt
         prompt = f"""
         You are Batas, a professional AI assistant specializing in analyzing local laws and ordinances.
 
@@ -80,30 +81,29 @@ def ask_batas(question):
         response = llm.invoke(prompt)
         raw_answer = response.content.strip()
 
-        # 6. The Gatekeeper: Filter sources based on the LLM's Secret Tag
+        # 6. Gatekeeper
         if "<USED_CONTEXT>" in raw_answer:
-            # The AI actually read the law. Remove the tag from the text and keep the sources.
             final_answer = raw_answer.replace("<USED_CONTEXT>", "").strip()
-            final_sources = sources 
+            final_sources = sources
         else:
-            # It was just a greeting or general chat! Wipe the sources array.
             final_answer = raw_answer
-            final_sources = [] 
+            final_sources = []
 
-        # 7. Build and print output
-        output = {
-            "answer": final_answer,
-            "sources": final_sources
-        }
-        print(json.dumps(output))
+        return {"answer": final_answer, "sources": final_sources}
 
     except Exception as e:
-        print(json.dumps({"answer": f"Error processing request: {str(e)}", "sources": []}))
+        return {"answer": f"Error processing request: {str(e)}", "sources": []}
+
+
+# ── CLI entry point (for local testing) ──────────────────────────────────────
+def ask_batas(question: str):
+    result = ask_batas_api(question)
+    print(json.dumps(result))
+
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:
         user_query = sys.argv[1]
-
         if user_query == "--get-model":
             print(ACTIVE_MODEL)
         else:
