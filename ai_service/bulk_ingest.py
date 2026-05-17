@@ -60,39 +60,40 @@ def ensure_collection_exists(client):
         print(f"✅ Collection '{COLLECTION_NAME}' already exists.")
 
 def process_and_split_pdf(file_path):
-    """Extract text with an OCR fallback for scanned image PDFs."""
+    """Extract text with an intelligent page-by-page OCR fallback."""
     loader = PyMuPDFLoader(file_path)
     docs = loader.load()
+    
+    pdf_document = fitz.open(file_path)
 
-    has_text = any(len(doc.page_content.strip()) > 10 for doc in docs)
-
-    if not has_text:
-        print("📸 Scanned image detected! Waking up Tesseract OCR...")
-        ocr_text = ""
-        pdf_document = fitz.open(file_path)
-
-        for page_num in range(len(pdf_document)):
-            print(f"   👁️ Scanning page {page_num + 1}...")
-            page = pdf_document.load_page(page_num)
+    for i, doc in enumerate(docs):
+        # A standard legal page has 1500+ characters. 
+        # If PyMuPDF extracts less than 800, it's likely a scan hiding an image layer.
+        if len(doc.page_content.strip()) < 800:
+            print(f"📸 Page {i + 1} has suspiciously low text count. Forcing Tesseract OCR...")
+            page = pdf_document.load_page(i)
+            # 300 DPI + Grayscale drastically improves Tesseract's reading accuracy
             pix = page.get_pixmap(dpi=300, colorspace=fitz.csGRAY)
             img_bytes = pix.tobytes("jpeg")
             img = Image.open(io.BytesIO(img_bytes))
-            page_text = pytesseract.image_to_string(img)
-            ocr_text += page_text + "\n\n"
-
+            
+            # Extract the hidden text from the pixels
+            ocr_text = pytesseract.image_to_string(img)
+            
+            # Combine whatever tiny text layer existed with the fresh OCR data
+            doc.page_content = doc.page_content + "\n\n" + ocr_text
+            
             img.close()
             del pix, img_bytes, img, page
             gc.collect()
 
-        pdf_document.close()
-        del pdf_document
-        gc.collect()
+    pdf_document.close()
+    del pdf_document
+    gc.collect()
 
-        docs = [Document(page_content=ocr_text, metadata={"source": file_path})]
-
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+    # Increased chunk size and overlap to prevent slicing paragraphs in half!
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1500, chunk_overlap=300)
     return text_splitter.split_documents(docs)
-
 
 def add_single_document(url):
     """Triggered by Node.js when a new file is uploaded. Appends to existing collection."""
