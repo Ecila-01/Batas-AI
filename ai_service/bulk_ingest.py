@@ -17,8 +17,52 @@ from langchain_core.documents import Document
 import sys
 import io
 import gc
+import re
+import time
 
 load_dotenv()
+
+
+def safe_remove(path):
+    """Best-effort temp-file cleanup. On Windows PyMuPDF can hold the file handle
+    briefly after processing, so a naive os.remove raises WinError 32. Retry with
+    a gc pass, and never let cleanup failure abort a document that already
+    ingested successfully."""
+    for _ in range(4):
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+            return
+        except Exception:
+            gc.collect()
+            time.sleep(0.25)
+
+
+def derive_title(source: str) -> str:
+    """Human-readable document title from a raw PDF filename.
+
+    Kept in sync with ai_service/chat.py so citations render consistently.
+    """
+    if not source:
+        return "Unknown document"
+    base = re.sub(r"\.pdf$", "", source, flags=re.IGNORECASE)
+    base = base.replace("_", " ").replace("-", " ")
+    base = re.sub(r"\s+", " ", base).strip()
+    return base or source
+
+
+def tag_chunk_metadata(chunk, source_name, url):
+    """Attach source, url, a clean title, and a 1-safe integer page to a chunk."""
+    chunk.metadata['source'] = source_name
+    chunk.metadata['url'] = url
+    chunk.metadata['title'] = derive_title(source_name)
+    page = chunk.metadata.get('page')
+    if page is not None:
+        try:
+            chunk.metadata['page'] = int(page)
+        except (TypeError, ValueError):
+            pass
+    return chunk
 
 if sys.platform == 'win32':
     pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
@@ -89,11 +133,16 @@ def process_and_split_pdf(file_path):
 
     pdf_document.close()
     del pdf_document
-    gc.collect()
 
     # Increased chunk size and overlap to prevent slicing paragraphs in half!
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1500, chunk_overlap=300)
-    return text_splitter.split_documents(docs)
+    chunks = text_splitter.split_documents(docs)
+
+    # Release the loader/parser handle so the temp file can be deleted on Windows.
+    del loader, docs
+    gc.collect()
+
+    return chunks
 
 def add_single_document(url):
     """Triggered by Node.js when a new file is uploaded. Appends to existing collection."""
@@ -107,12 +156,11 @@ def add_single_document(url):
 
         new_chunks = process_and_split_pdf(temp_pdf_path)
         real_filename = url.split('/')[-1]
+        new_chunks = [c for c in new_chunks if c.page_content.strip()]
         for chunk in new_chunks:
-            chunk.metadata['source'] = real_filename
-            chunk.metadata['url'] = url 
+            tag_chunk_metadata(chunk, real_filename, url)
         if not new_chunks:
-            print("⚠️ No chunks generated from document. Aborting.")
-            os.remove(temp_pdf_path)
+            print("⚠️ No usable text extracted from document. Aborting.")
             return
 
         client = get_qdrant_client()
@@ -125,12 +173,12 @@ def add_single_document(url):
             embedding=embeddings
         )
         vectorstore.add_documents(new_chunks)
-
-        os.remove(temp_pdf_path)
         print("✅ Success: Qdrant updated with new document chunks!")
 
     except Exception as e:
         print(f"❌ Failed to update Qdrant: {e}")
+    finally:
+        safe_remove(temp_pdf_path)
 
 
 def run_master_sync(folder_name="Batas"):
@@ -178,7 +226,9 @@ def run_master_sync(folder_name="Batas"):
 
     for index, url in enumerate(pdf_urls):
         print(f"⬇️ [{index + 1}/{len(pdf_urls)}] Downloading: {url.split('/')[-1]}")
-        temp_pdf_path = "temp_download.pdf"
+        # Unique temp name per document so a lingering file handle can never make
+        # one document clobber the next.
+        temp_pdf_path = f"temp_download_{index}.pdf"
         try:
             response = requests.get(url)
             with open(temp_pdf_path, 'wb') as f:
@@ -186,37 +236,55 @@ def run_master_sync(folder_name="Batas"):
 
             splits = process_and_split_pdf(temp_pdf_path)
             real_filename = url.split('/')[-1]
+            splits = [s for s in splits if s.page_content.strip()]
             for chunk in splits:
-                chunk.metadata['source'] = real_filename
-                chunk.metadata['url'] = url 
+                tag_chunk_metadata(chunk, real_filename, url)
             if splits:
                 print(f"   💉 Uploading {len(splits)} chunks to Qdrant...")
                 vectorstore.add_documents(splits)
                 print(f"   ✅ Done!")
+            else:
+                print(f"   ⚠️ No usable text extracted — skipped.")
 
-            os.remove(temp_pdf_path)
-
-            # Free memory after each PDF
             del splits
             gc.collect()
 
         except Exception as e:
             print(f"⚠️ Failed to process {url}. Error: {e}")
+        finally:
+            safe_remove(temp_pdf_path)
 
     final_count = client.count(collection_name=COLLECTION_NAME).count
     print(f"\n✅ SUCCESS: Master sync complete! Qdrant now has {final_count} vectors.")
 
 
+def reset_collection():
+    """Delete the Qdrant collection so the next sync re-embeds everything fresh."""
+    client = get_qdrant_client()
+    existing = [c.name for c in client.get_collections().collections]
+    if COLLECTION_NAME in existing:
+        print(f"Deleting collection '{COLLECTION_NAME}'...")
+        client.delete_collection(COLLECTION_NAME)
+        print("Collection deleted.")
+    else:
+        print(f"Collection '{COLLECTION_NAME}' does not exist yet - nothing to delete.")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--url', type=str, help='Cloudinary URL for single file injection')
+    parser.add_argument('--reset', action='store_true',
+                        help='Delete the Qdrant collection, then re-ingest every PDF from Cloudinary')
     args = parser.parse_args()
 
     if args.url:
         add_single_document(args.url)
+    elif args.reset:
+        reset_collection()
+        run_master_sync()
     else:
         run_master_sync()
 
-    print("👋 Ingestion finished!")
+    print("Ingestion finished!")
     sys.stdout.flush()
     os._exit(0)

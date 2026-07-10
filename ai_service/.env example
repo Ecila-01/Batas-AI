@@ -1,6 +1,24 @@
-GOOGLE_API_KEY =
-CLOUDINARY_CLOUD_NAME = 
-CLOUDINARY_API_KEY =
-CLOUDINARY_API_SECRET = 
-QDRANT_URL
-QDRANT_API_KEY
+# --- Core (required) ---
+GOOGLE_API_KEY=
+CLOUDINARY_CLOUD_NAME=
+CLOUDINARY_API_KEY=
+CLOUDINARY_API_SECRET=
+QDRANT_URL=
+QDRANT_API_KEY=
+
+# --- Generation fallback providers (optional, all free tiers) ---
+# Set any of these to add them to the model fallback chain. The chain is ordered
+# by quality (best first) and falls back to the next on any rate-limit/error,
+# with Gemini (GOOGLE_API_KEY above) as the final fallback.
+#   1. OpenRouter (core): https://openrouter.ai/keys
+#   2. GitHub Models:     https://github.com/settings/tokens  (fine-grained, "models:read")
+#   3. Groq:              https://console.groq.com/keys
+OPENROUTER_API_KEY=
+GITHUB_TOKEN=
+GROQ_API_KEY=
+
+# --- Optional model overrides (defaults shown) ---
+# OPENROUTER_MODEL=deepseek/deepseek-chat-v3-0324:free
+# GITHUB_MODEL=openai/gpt-5-mini
+# GROQ_MODEL=llama-3.3-70b-versatile
+# GEMINI_MODEL=gemini-2.0-flash

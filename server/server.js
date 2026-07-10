@@ -14,9 +14,10 @@ let isSystemInitializing = true;
 
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
-// Trust both the production Vercel URL and your local development URL
+// Trust the production Vercel URL(s) and your local development URL.
+// CLIENT_URL may be a single origin or a comma-separated list of origins.
 const allowedOrigins = [
-    process.env.CLIENT_URL, 
+    ...(process.env.CLIENT_URL ? process.env.CLIENT_URL.split(',').map(o => o.trim()).filter(Boolean) : []),
     'http://localhost:5173'
 ];
 
@@ -43,6 +44,7 @@ const chatSchema = new mongoose.Schema({
     sessionId: String,
     question: String,
     answer: String,
+    sources: { type: Array, default: [] },
     createdAt: { type: Date, default: Date.now, expires: 86400 }
 });
 
@@ -156,7 +158,7 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
 app.get('/api/history/:sessionId', async (req, res) => {
     try {
         const { sessionId } = req.params;
-        const history = await Chat.find({ sessionId: sessionId }).sort({ timestamp: 1 });
+        const history = await Chat.find({ sessionId: sessionId }).sort({ createdAt: 1 });
         res.json(history);
     } catch (error) {
         console.error("❌ Error fetching history:", error);
@@ -213,7 +215,8 @@ app.post('/api/ask', async (req, res) => {
             const newChat = new Chat({
                 sessionId: sessionId,
                 question: userQuestion,
-                answer: finalAnswer
+                answer: finalAnswer,
+                sources: sources
             });
             await newChat.save();
             console.log("💾 Chat successfully saved to database!");

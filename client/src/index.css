@@ -1,0 +1,135 @@
+/* ============================================================
+   Batas AI — design tokens & base
+   Direction: Sage archetype (truth, precision, credibility) for a
+   legal-research tool. Warm paper + a single deep-green accent,
+   amber reserved for citation/reference highlights only. Serif
+   display for gravitas, grotesque sans for UI, mono for metadata.
+   ============================================================ */
+
+:root {
+  /* Type */
+  --font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
+  --font-sans: 'Archivo', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+
+  /* Spacing scale */
+  --s-1: 4px;  --s-2: 8px;  --s-3: 12px; --s-4: 16px;
+  --s-5: 24px; --s-6: 32px; --s-7: 48px; --s-8: 64px;
+
+  --radius: 10px;
+  --radius-sm: 7px;
+  --radius-lg: 14px;
+
+  --shadow-panel: 0 1px 2px rgba(20, 18, 12, 0.04), 0 8px 24px rgba(20, 18, 12, 0.06);
+  --shadow-pop: 0 12px 40px rgba(20, 18, 12, 0.16);
+
+  --transition: 160ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* Light (default) — warm paper */
+:root,
+[data-theme="light"] {
+  --paper: #f4f1ea;
+  --surface: #faf8f3;
+  --surface-2: #efeade;
+  --surface-3: #e7e1d2;
+
+  --ink: #1b1a15;
+  --text: #3f3c31;
+  --muted: #726c5c;
+  --faint: #9a9482;
+
+  --border: rgba(27, 26, 21, 0.12);
+  --border-strong: rgba(27, 26, 21, 0.22);
+
+  --accent: #0d6b47;
+  --accent-strong: #0a5236;
+  --accent-soft: rgba(13, 107, 71, 0.10);
+  --accent-contrast: #ffffff;
+
+  --cite: #8a5a0c;
+  --cite-bg: rgba(176, 122, 22, 0.14);
+  --cite-border: rgba(176, 122, 22, 0.30);
+
+  --user-bubble: #e8e2d3;
+  --danger: #b4462f;
+  --danger-bg: rgba(180, 70, 47, 0.08);
+  --ok: #0d6b47;
+}
+
+/* Dark — warm charcoal */
+[data-theme="dark"] {
+  --paper: #16140e;
+  --surface: #1e1b14;
+  --surface-2: #262218;
+  --surface-3: #302b20;
+
+  --ink: #f3efe4;
+  --text: #d8d2c3;
+  --muted: #a19a89;
+  --faint: #7c7566;
+
+  --border: rgba(243, 239, 228, 0.12);
+  --border-strong: rgba(243, 239, 228, 0.22);
+
+  --accent: #4dc08a;
+  --accent-strong: #6bd0a0;
+  --accent-soft: rgba(77, 192, 138, 0.14);
+  --accent-contrast: #10261c;
+
+  --cite: #e2b25f;
+  --cite-bg: rgba(226, 178, 95, 0.16);
+  --cite-border: rgba(226, 178, 95, 0.34);
+
+  --user-bubble: #2b2619;
+  --danger: #e08163;
+  --danger-bg: rgba(224, 129, 99, 0.10);
+  --ok: #4dc08a;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100%;
+  width: 100%;
+}
+
+body {
+  background-color: var(--paper);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+#root {
+  height: 100vh;
+  width: 100%;
+}
+
+/* Scrollbars — quiet, warm */
+* { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 8px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-track { background: transparent; }
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+}

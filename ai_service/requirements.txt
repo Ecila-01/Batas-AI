@@ -13,3 +13,4 @@ qdrant-client
 langchain-qdrant
 fastapi
 uvicorn
+langchain-openai
